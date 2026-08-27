@@ -1,4 +1,4 @@
-# Project Proposal: Large-Scale Mortgage Denial Risk Prediction & Fair-Lending Analytics
+# Project Proposal: Large-Scale Mortgage Approval Prediction & Fair-Lending Analytics
 
 **Domain:** Finance (Credit Risk / Lending Analytics)
 **Type:** Traditional ML — large-scale structured data, binary classification
@@ -13,7 +13,7 @@ A lending institution receives thousands of mortgage applications daily and has 
 
 This project asks two questions simultaneously:
 
-1. **Predictive:** Based only on information available at the time of application, how likely is a given mortgage application to be denied?
+1. **Predictive:** Based only on information available at the time of application, how likely is a given mortgage application to be approved?
 2. **Responsible-AI:** Does a model that predicts this well also behave *consistently* across different applicant demographic groups, or does it introduce systematic disparities?
 
 Answering only the first question produces a good classifier. Answering both produces a decision-support system a real financial institution could plausibly discuss with a risk, compliance, or fair-lending team.
@@ -22,7 +22,7 @@ Answering only the first question produces a good classifier. Answering both pro
 
 ## 2. Objective
 
-> Build a machine-learning decision-support system that estimates the probability of mortgage denial from pre-decision applicant, loan, and property information — and evaluate whether that model's error rates and calibration are consistent across race, ethnicity, and sex subgroups.
+> Build a machine-learning decision-support system that estimates the probability of mortgage approval from pre-decision applicant, loan, and property information — and evaluate whether that model's error rates and calibration are consistent across race, ethnicity, and sex subgroups.
 
 This is explicitly **not** an autonomous approval/rejection system. The output is a risk score plus contributing factors, intended to sit in front of a human underwriter — not replace one.
 
@@ -41,15 +41,20 @@ This is explicitly **not** an autonomous approval/rejection system. The output i
 
 ## 4. Target variable
 
-Derived from the `action_taken` field:
+Derived from the `action_taken` field. The modeling target is `approved`, with **approval as the positive class (1)**:
 
-| Value | Meaning |
-|---|---|
-| `1` | Denied → target = 1 |
-| `0` | Originated / approved → target = 0 |
-| other codes (withdrawn, incomplete, purchased loan, etc.) | Excluded from the modeling set — these don't represent a clean approve/deny outcome |
+| `action_taken` code | Meaning | `approved` (target) |
+|---|---|---|
+| `1` | Loan originated | `1` |
+| `3` | Application denied | `0` |
+| all other codes (withdrawn, incomplete, purchased loan, preapproval-only, etc.) | No clean approve/deny decision was made | Excluded from the modeling set |
 
-This filtering decision is documented explicitly in the notebook, since it directly shapes what the model can and cannot claim to predict.
+```python
+df_model["approved"] = (df["action_taken"] == "1").astype("int8")
+df_model_decisions["approved"] = df_decisions["approved"]
+```
+
+This filtering decision is documented explicitly in the notebook, since it directly shapes what the model can and cannot claim to predict. Framing the target as *approval* rather than *denial* is a deliberate choice, not just a sign flip — it means the model's positive predictions correspond to the outcome an applicant wants, which keeps precision/recall/SHAP outputs intuitive to read (e.g. "predicted probability of approval," not a double-negative "predicted probability of not-being-denied").
 
 ---
 
@@ -64,16 +69,22 @@ X = Applicant + Loan + Property + Financial Features (pre-decision only)
 Predict:
 
 ```
-P(Y = Denied | X)
+P(Y = Approved | X)
 ```
 
-The output is a **probability**, not a hard label — e.g. `0.784` — so the institution can set its own risk-tier thresholds (illustrative, not prescriptive):
+The output is a **probability of approval**, not a hard label — e.g. `0.784` means a 78.4% predicted chance of approval. For underwriting/risk-review workflows, this is more naturally read as a **denial-risk score**, which is just the complement:
 
 ```
-0–20%    Low predicted denial risk
+denial_risk = 1 − P(Y = Approved | X)
+```
+
+So the institution can set its own risk-tier thresholds off `denial_risk` (illustrative, not prescriptive):
+
+```
+0–20%    Low predicted denial risk    (high predicted approval probability)
 20–50%   Moderate
 50–75%   High
-75–100%  Very high
+75–100%  Very high                    (low predicted approval probability)
 ```
 
 ---
@@ -120,10 +131,10 @@ Logistic Regression → Random Forest → XGBoost / LightGBM → CatBoost
 SHAP-based feature attribution on a sampled explanation set, producing per-application output such as:
 
 ```
-Predicted probability of denial: 78.4%
-Risk level: High
+Predicted probability of approval: 21.6%
+Predicted denial risk: 78.4% (High)
 
-Top contributing factors:
+Top contributing factors (pushing toward denial):
 • High loan-to-income ratio
 • High loan amount relative to property value
 • Loan characteristics associated with elevated historical denial rates
@@ -144,10 +155,15 @@ Calibration comparison across groups
 Investigate and report significant disparities
 ```
 
+**Positive-class note:** since `approved` (not `denied`) is the positive class, standard metric names need care when discussing them with a fair-lending audience:
+- **True Positive Rate (TPR)** = share of *actually-approved* applicants the model correctly predicts as approved.
+- **False Negative Rate (FNR)** = share of *actually-approved* applicants the model incorrectly predicts as denied — this is the metric of greatest fair-lending concern (a qualified applicant wrongly flagged as high-risk), and it should be reported by subgroup with the same weight as overall accuracy, not as a secondary metric.
+- **False Positive Rate (FPR)** = share of *actually-denied* applicants the model incorrectly predicts as approved — an over-approval error, not an equity harm in the traditional sense, but still worth monitoring for portfolio risk.
+
 **Scope note:** this project *measures and reports* subgroup disparities — it does not implement a fairness-constrained optimizer. That's a deliberately honest scope boundary, and stating it explicitly is part of the deliverable.
 
 ### 7.7 Deployment
-A lightweight FastAPI/Streamlit inference demo: submit application features → receive denial probability, risk tier, and top SHAP-based contributing factors. Framed explicitly as a decision-support layer, not an autonomous approval system.
+A lightweight FastAPI/Streamlit inference demo: submit application features → receive approval probability, derived denial-risk tier, and top SHAP-based contributing factors. Framed explicitly as a decision-support layer, not an autonomous approval system.
 
 ---
 
@@ -181,7 +197,7 @@ A lightweight FastAPI/Streamlit inference demo: submit application features → 
 
 ## 10. One-line interview summary
 
-> "I built a large-scale mortgage decision-support model using over 12 million real 2024 U.S. mortgage application records. The goal was to predict the probability of mortgage denial using only information available at decision time, while evaluating predictive performance, calibration, and subgroup fairness. I compared several traditional ML models and deployed the best-performing one as an inference service."
+> "I built a large-scale mortgage decision-support model using over 12 million real 2024 U.S. mortgage application records. The goal was to predict the probability of mortgage approval using only information available at decision time, while evaluating predictive performance, calibration, and subgroup fairness. I compared several traditional ML models and deployed the best-performing one as an inference service."
 
 **Deeper conversation tree available on request:** Why HMDA? → Target definition → Leakage → Feature engineering → Class imbalance → Model selection → SHAP → Fairness → Deployment.
 
