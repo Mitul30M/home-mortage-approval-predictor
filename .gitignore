@@ -19,3 +19,4 @@ __pycache__/
 /claude_approach
 data/raw/*
 data/processed/*
+/.opencode/*
