@@ -20,3 +20,5 @@ __pycache__/
 data/raw/*
 data/processed/*
 /.opencode/*
+artifacts/*.json
+artifacts/*.pkl
