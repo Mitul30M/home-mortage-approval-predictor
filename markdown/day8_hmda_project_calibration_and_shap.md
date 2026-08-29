@@ -2,9 +2,13 @@
 
 **Inputs from Day 7 (`7_collab_hyperparameter_tuning.ipynb`):**
 - Tuned XGBoost, 78-feature canonical schema (`day7_model_features.csv`), `is_race_proxy=1` on `tract_minority_population_percent`
-- `day7_best_xgb_params.json` — `max_depth=10` (search-space boundary — flagged, not re-tuned today)
-- Val: ROC-AUC 0.8958 / PR-AUC 0.9543 / P 0.9147 / R 0.8620 / F1 0.8876
-- Test (single look): ROC-AUC 0.8961 / PR-AUC 0.9544 / P 0.9148 / R 0.8623 / F1 0.8878
+- Tuning target: XGBoost; objective = PR-AUC on X_val; trials = 20; trial subsample = 1000000.
+- scale_pos_weight fixed = 0.3396. Feature set = 78 (from day7_model_features.csv).
+- Best PR-AUC (X_val) = 0.9496. Best params: {"max_depth": 13, "learning_rate": 0.008616500012778569, "n_estimators": 2500, "subsample": 0.9944859888550582, "colsample_bytree": 0.5952111558253492, "min_child_weight": 20, "reg_lambda": 0.418806703627406, "reg_alpha": 0.12419627835407367}
+- Note: X_test was used only for this final evaluation (tuning used X_val only).
+- Artifacts: day7_best_xgb_params.json, day7_tuned_metrics.csv, day7_optuna_progress.csv, figures/day7/*.png.
+- Tuned XGBoost X_val: ROC-AUC=0.8930 PR-AUC=0.9531 P=0.9142 R=0.8565 F1=0.8844
+- Tuned XGBoost X_test (single look): ROC-AUC=0.8933 PR-AUC=0.9532 P=0.9143 R=0.8571 F1=0.8848
 
 **Day 8 focus:** README §7.4 (full evaluation — calibration + business-threshold confusion matrix, not just the AUC numbers already in hand) and §7.5 (SHAP explainability) together, since neither is complete without the other — a threshold choice needs to be explainable, and SHAP needs a model that's actually been checked for calibration first.
 
@@ -31,8 +35,9 @@ Everything since Day 6 has run on positional numpy arrays with no column names a
 - Plot a calibration curve (reliability diagram) on `X_val`: predicted probability (binned) vs. actual observed approval rate in each bin.
 - If the curve shows meaningful distortion (a class-weighted model typically over- or under-predicts extreme probabilities), decide whether to apply post-hoc recalibration (Platt scaling or isotonic regression, fit on `X_val`, never `X_test`) or explicitly document that the model's output should be read as a **ranking score**, not a calibrated probability, for the rest of the project.
 - If recalibration is applied, re-plot the calibration curve after correction to confirm it actually improved.
+- **Important ordering note:** if recalibration is applied (Platt scaling or isotonic regression), keep the **raw, uncalibrated model** as the one SHAP explains in Steps 3–6 below. Both calibration methods are monotonic, so they don't change ranking, threshold choice, or which features matter — but isotonic regression in particular breaks the additive assumption SHAP's math relies on, making attributions harder to interpret cleanly. Use the calibrated probabilities only for the business-facing threshold/risk-tier output in Step 2 and `explain_application` in Step 5; use the raw model's score for the actual `TreeExplainer` calls.
 
-**Deliverable:** calibration plot (before/after if recalibrated) + a one-line decision on how model output should be interpreted going forward.
+**Deliverable:** calibration plot (before/after if recalibrated) + a one-line decision on how model output should be interpreted going forward + the explicit raw-vs-calibrated split documented for Steps 3–6.
 
 ---
 
