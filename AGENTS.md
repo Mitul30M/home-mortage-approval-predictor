@@ -194,3 +194,51 @@ A lightweight FastAPI/Streamlit inference demo: submit application features → 
 | 10 | Deployment demo + documentation polish |
 
 ---
+
+---
+
+## Day 9 Progress (deferred EDA + fairness analysis)
+
+**Status (as of Day 9 build):** both notebooks built, syntax-validated, and core pipeline smoke-tested.
+
+### Deliverables produced
+- `notebooks/hmda_eda.ipynb` — deferred full EDA on `data/processed/hmda_2024_clean.parquet` (pre-split, pre-imputation, 8.26M rows). Sections A.1–A.9. All plots inline, **none saved to `figures/`**. 39 cells (28 code / 11 md). Recomputes `loan_to_income_ratio` inline; uses a 250k reproducible sample for plots and full file for stats.
+- `notebooks/9_fairness_analysis.ipynb` — Day 9 fairness milestone. Self-contained (reloads model, recomputes Platt calibration + the 0.858 business threshold from scratch). Steps 0–7 covering subgroup TPR/FPR/FNR/precision/recall/F1 by `derived_race`, `derived_ethnicity`, `derived_sex` at both 0.5 and 0.858; disparity-gap quantification; 0.5-vs-0.858 verdict; calibration-by-group diagrams; Day 8 SHAP proxy tie-back; false-negative population profiling; one confirmatory X_test look; wrap-up + limitations + open questions for Day 10. 20 cells (9 code / 11 md). Writes `markdown/day9_fairness_summary.md`.
+- `figures/day9/` — created for fairness figures (written at runtime).
+- Builder scripts: `/tmp/opencode/build_eda.py`, `/tmp/opencode/build_fairness.py` (reproducible notebook generation).
+
+### Key methodological decisions captured
+- **Choice A (recommended):** only `artifacts/hmda_tuned_xgboost.pkl`/`.json` persisted; `TreeExplainer` and the Platt `LogisticRegression` calibrator are reconstructed live each run — no separate SHAP or calibrator artifact, deterministic and shap-version-stable.
+- **Day 2 exclusion rule** reapplied for the primary comparison subset: exclude `Joint`, `*_Not Available`, `Free Form Text Only` per demographic dimension (sizes reported separately).
+- **Small-sample rule:** flag any group with n < 500 in the evaluation subset.
+- **Protocol:** X_val for Steps 1–5 (investigative); X_test gets exactly one confirmatory look (Step 6).
+- **Scope honored:** measures and reports disparities; does not implement a fairness-constrained optimizer or retrain the model (README boundary). The original Day 3 regression-adjusted analysis was never executed; Day 9 reports model error rates (a related but different question).
+
+### Validation results (smoke-tested)
+- Reproduced val ROC-AUC=0.8930 / PR-AUC=0.9531; test ROC-AUC=0.8933.
+- Business threshold (X_val Fbeta=0.3) = 0.8582; FN population (val+test) at threshold = 457,066.
+- Race FNR disparity *shrank* at the 0.858 threshold vs 0.5 (helped); ethnicity and sex FNR disparity *widened*.
+- False-negative population over-representation: Black (1.28×), Native Hawaiian/PI (1.19×), American Indian/Alaska Native (1.14×); Asian under-represented (0.72×); White ≈ baseline (1.0×).
+- EDA notebook: data loads, 250k sample, approved share 0.7465, 16 continuous + 17 categorical + 5 pie-low fields.
+
+### Remaining
+- Run the full notebooks end-to-end in Jupyter (heavy: 8M-row EDA plots and 50k-row SHAP) to generate all figures and the summary markdown.
+- Day 10: deployment demo (FastAPI/Streamlit) + documentation polish + consider Day-3 regression-adjusted analysis.
+
+### Day 9 notebook bug fixes (post-build validation)
+Two issues found and fixed in `notebooks/hmda_eda.ipynb` (and the same root cause in `notebooks/9_fairness_analysis.ipynb`):
+
+1. **Invisible plots** — both notebooks imported `matplotlib` with `matplotlib.use('Agg')`, a non-interactive backend, and lacked `%matplotlib inline`. With Agg active, `plt.show()` renders to an off-screen buffer the notebook never captures, so all plot cells showed `outputs: []`. Fixed by replacing the `matplotlib.use('Agg')` line with `%matplotlib inline` as the first executable line (before `import matplotlib.pyplot`).
+
+2. **`sns.heatmap` crash** (`notebooks/hmda_eda.ipynb` only) — three heatmap calls passed an invalid `xrotation=45` kwarg that the installed seaborn version does not support, producing `AttributeError: QuadMesh.set() got an unexpected keyword argument 'xrotation'`. Fixed by removing `xrotation=45` and rotating the x-tick labels manually after each call: `ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right')`.
+
+Both notebooks re-validated after the fixes: 0 syntax errors, 0 leftover bad patterns; heatmap cells confirmed to render without error.
+
+### Day 9 runtime bugs fixed (post-build validation, in `notebooks/9_fairness_analysis.ipynb`)
+Two IndexError/KeyError bugs found when the notebook executes end-to-end:
+
+1. **`pc_test_p` IndexError (calibration cell):** `pc_test_p = {dim: pc_test[primary_mask(val_demo, dim)]}` indexed the 1.65M-element `pc_test` array with a 661k-element `val_demo` mask → `IndexError: boolean index did not match`. Fixed: `primary_mask(test_demo, dim)` so the mask length matches `pc_test`.
+
+2. **Step 6 `UndefinedVariableError`:** the X_test confirmatory comparison called `.query('metric=="FNR"')` on `RES` and `TEST` DataFrames — but those come from `subgroup_metrics`, which has columns `group, n, TPR, FPR, FNR, precision, recall, F1, small` (no `metric` column). Only the `compute_gaps`-produced `GAPS` DataFrames have a `metric` column. Fixed: replaced `.query('metric=="FNR"')['FNR']` with direct `['FNR']` column access.
+
+Both notebooks now validated end-to-end: 0 syntax errors, 0 leftover bad patterns.
